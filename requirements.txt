@@ -1,0 +1,15 @@
+streamlit
+python-dotenv
+pyyaml
+loguru
+langchain
+langgraph
+langchain-openai
+requests
+graphviz
+weasyprint
+markdown
+pydantic
+PyMuPDF
+tiktoken 
+reportlab

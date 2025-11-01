@@ -1,0 +1,91 @@
+# ========================
+# SDLC Agentic Workbench
+# ========================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ---- Virtual Environment ----
+.venv/
+venv/
+env/
+ENV/
+*.envrc
+
+# ---- Logs & Outputs ----
+logs/
+*.log
+outputs/
+!outputs/.gitkeep        # keep empty folder structure if needed
+
+# ---- Cache & Temporary ----
+*.tmp
+*.bak
+*.swp
+*.swo
+*.DS_Store
+Thumbs.db
+.cache/
+.ipynb_checkpoints/
+.mypy_cache/
+__temp__/
+tmp/
+.temp/
+local_test_*/
+
+# ---- Environment & Secrets ----
+.env
+.env.*
+*.secrets
+secrets.json
+
+# ---- Configurations ----
+config/settings.yaml
+config/local_settings.yaml
+config/*.yml
+config/*.json
+
+# ---- Streamlit ----
+.streamlit/
+.streamlit/secrets.toml
+
+# ---- IDE / Editor ----
+.vscode/
+.idea/
+*.iml
+
+# ---- Generated Files ----
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.dot
+*.svg
+
+# ---- OS / System ----
+.DS_Store
+ehthumbs.db
+Icon?
+desktop.ini
+
+# ---- Python Bytecode ----
+*.pyc
+*.pyo
+*.pyd
+
+# ---- Reports / Docs ----
+reports/
+notebooks/
+docs/_build/
+*.ipynb
+*.md~
