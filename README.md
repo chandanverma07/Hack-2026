@@ -91,3 +91,9 @@ http://localhost:8501
 
 other if needed 
 conda install -c conda-forge python-graphviz
+
+pip install playwright
+playwright install
+
+Running automation 
+Playwrite_Automation> python agent_event.py
