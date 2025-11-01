@@ -87,3 +87,7 @@ streamlit run app/main.py
 
  browser will open at something like:
 http://localhost:8501
+
+
+other if needed 
+conda install -c conda-forge python-graphviz

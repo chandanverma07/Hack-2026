@@ -8,7 +8,6 @@ if str(root_dir) not in sys.path:
 
 import time
 import base64
-import re
 import io
 import json
 import streamlit as st
@@ -74,7 +73,6 @@ st.sidebar.markdown("---")
 enable_jira = st.sidebar.checkbox("Enable JIRA Posting", value=False)
 st.sidebar.caption("Configure LLM and settings in `.env` or `config/settings.yaml`")
 
-# Token usage monitor
 st.sidebar.markdown("### Token Usage Monitor")
 progress_bar = st.sidebar.progress(0)
 token_info = st.sidebar.empty()
@@ -115,7 +113,7 @@ def extract_text_with_vision(file_bytes: bytes, mime_type: str) -> str:
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "Extract readable text from this document. Return plain text only."},
-                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_image}"}}
                     ],
                 }
             ],
@@ -142,16 +140,26 @@ def pdf_to_images_bytes(pdf_bytes: bytes) -> list:
 # Display Requirement Output
 # ============================================================
 def display_requirement_output(result: dict):
-    """Display structured requirement output and formatted PDF download."""
+    """Display structured requirement output, save JSON, and enable downloads."""
     readable_text = result.get("readable_text", "").replace("\\n", "\n").strip()
     parsed_json = result.get("parsed_json", {})
 
-    # Section 1 - JSON View
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+    json_path = output_dir / "requirements_output.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(parsed_json, f, indent=2, ensure_ascii=False)
+
     if parsed_json:
         st.markdown("### Structured JSON Output")
         st.json(parsed_json)
+        st.download_button(
+            label="Download JSON Output",
+            data=json.dumps(parsed_json, indent=2, ensure_ascii=False),
+            file_name="requirements_output.json",
+            mime="application/json",
+        )
 
-    # Section 2 - Text Report
     if readable_text:
         st.markdown("---")
         st.markdown("### Detailed Requirement Report")
@@ -159,18 +167,18 @@ def display_requirement_output(result: dict):
     else:
         st.warning("No readable report text found.")
 
-    # Section 3 - PDF Export
     pdf_buffer = io.BytesIO()
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(pdf_buffer, pagesize=A4)
-    story = [Paragraph(readable_text, styles["Normal"])]
+    story = [Paragraph(readable_text, styles["Normal"]), Spacer(1, 12)]
     doc.build(story)
     st.download_button(
-        "Download as PDF",
+        label="Download as PDF",
         data=pdf_buffer.getvalue(),
         file_name="Requirements_Report.pdf",
         mime="application/pdf",
     )
+    st.success(f"Structured JSON saved to: {json_path}")
 
 
 # ============================================================
@@ -223,47 +231,53 @@ if st.button("Execute"):
 
         with st.spinner("Running selected agent..."):
             try:
-                # Requirement Agent
                 if "Requirement" in agent_option:
                     result = run_requirement_agent(user_input)
                     st.success("Requirements extracted successfully.")
                     display_requirement_output(result)
 
-                # Flow Diagram
                 elif "Flow" in agent_option:
                     req = run_requirement_agent(user_input)
                     diagram_path = run_flow_agent(req)
-                    if Path(diagram_path).exists():
-                        st.image(diagram_path, caption="Generated Flow Diagram", use_container_width=True)
+                    if diagram_path and Path(diagram_path).exists():
+                        if str(diagram_path).endswith(".png"):
+                            st.image(diagram_path, caption="Generated Flow Diagram", width="stretch")
+                        else:
+                            try:
+                                dot_text = Path(diagram_path).read_text()
+                                st.code(dot_text, language="dot")
+                                st.warning("Graphviz not found. Showing DOT text instead of image.")
+                            except Exception as e:
+                                st.error(f"Unable to display diagram: {e}")
+                    else:
+                        st.warning("No valid diagram generated. Please check Graphviz installation.")
 
-                # Mind Map
                 elif "Mind Map" in agent_option:
                     req = run_requirement_agent(user_input)
                     st.success("Requirements extracted. Generating mind map...")
                     mindmap = run_mindmap_agent(req.get("readable_text", user_input))
                     st.code(mindmap["text_map"], language="dot")
-                    if Path(mindmap["image_path"]).exists():
-                        st.image(mindmap["image_path"], caption="Visual Mind Map", use_container_width=True)
+                    if mindmap["image_path"] and Path(mindmap["image_path"]).exists():
+                        st.image(mindmap["image_path"], caption="Visual Mind Map", width="stretch")
 
-                # SRS
                 elif "SRS" in agent_option:
                     req = run_requirement_agent(user_input)
                     pdf_path = run_srs_agent(req)
-                    if Path(pdf_path).exists():
-                        st.download_button("Download SRS PDF", data=open(pdf_path, "rb"), file_name="SRS_Document.pdf")
+                    if pdf_path and Path(pdf_path).exists():
+                        with open(pdf_path, "rb") as pdf_file:
+                            st.download_button("Download SRS PDF", data=pdf_file, file_name="SRS_Document.pdf")
+                    else:
+                        st.warning("SRS generation failed — file not found.")
 
-                # JIRA Stories
                 elif "JIRA" in agent_option:
                     req = run_requirement_agent(user_input)
                     stories = run_jira_story_agent(req)
                     st.json(stories)
 
-                # Sequential Full Pipeline
                 elif "Sequential" in agent_option:
                     full_result = run_sequential_pipeline(user_input)
                     st.json(full_result)
 
-                # LangGraph
                 elif "LangGraph" in agent_option:
                     graph_result = run_sdlc_graph(user_input)
                     st.json(graph_result)
@@ -272,7 +286,6 @@ if st.button("Execute"):
                 st.error(f"Error executing agent: {e}")
                 logger.exception(e)
 
-        # Token Summary
         summary = tracker.summary()
         if summary["total_input_tokens"] > 0:
             st.markdown("---")

@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from pathlib import Path
 from core.llm import get_llm
@@ -16,51 +17,62 @@ def run_flow_agent(requirements: dict) -> str:
     Generate a Graphviz DOT script from structured requirements via LLM
     and render a PNG diagram (if Graphviz 'dot' is installed).
 
+    Args:
+        requirements (dict): Output from requirement_agent (contains both readable_text and parsed_json)
     Returns:
         str: Path to the generated PNG (preferred) or DOT file (fallback).
     """
     try:
-        # -------------------------------
-        # 1️⃣ Load Prompts
-        # -------------------------------
+        logger.info("[FlowAgent] Starting flow diagram generation...")
+
+        # Handle both plain text and structured requirement output
+        if isinstance(requirements, dict):
+            requirements_json = (
+                json.dumps(requirements.get("parsed_json", {}), indent=2)
+                if requirements.get("parsed_json")
+                else requirements.get("readable_text", "")
+            )
+        else:
+            requirements_json = str(requirements)
+
+        # Load prompt templates
         system_prompt = load_prompt("system_base.md")
         user_prompt = load_prompt("flow.md").format(
             system=system_prompt,
-            requirements_json=json.dumps(requirements, indent=2)
+            requirements_json=requirements_json
         )
 
-        # -------------------------------
-        # 2️⃣ Initialize LLM
-        # -------------------------------
-        llm = get_llm()
-        logger.info("[FlowAgent] Generating system flow diagram via LLM...")
+        # Initialize model
+        llm = get_llm("flow")
+        logger.info("[FlowAgent] Invoking model for flow generation...")
 
-        # -------------------------------
-        # 3️⃣ Run Model (Token Tracked)
-        # -------------------------------
-        if hasattr(llm, "run_with_usage"):
-            resp = llm.run_with_usage(user_prompt, "FlowAgent")
-        else:
-            resp = llm.invoke(user_prompt)
+        # Generate flow diagram text
+        response = llm.invoke(user_prompt, agent_name="flow")
+        dot_code = getattr(response, "content", str(response)).strip()
 
-        dot_code = resp.content if hasattr(resp, "content") else str(resp)
+        # Clean any markdown or code fences (```dot ... ```)
+        clean_dot = re.sub(r"^```[a-zA-Z]*\s*", "", dot_code)
+        clean_dot = re.sub(r"```$", "", clean_dot)
+        clean_dot = clean_dot.strip("` \n\r\t")
 
-        # Validate minimal Graphviz syntax
-        if "digraph" not in dot_code:
-            logger.warning("[FlowAgent] Output does not appear to be valid Graphviz DOT.")
-            dot_code = f"digraph G {{\n  label=\"Generated Flow Diagram\";\n  node [shape=box];\n  LLM_Output -> Manual_Verification;\n}}"
+        # Validate Graphviz syntax and fallback
+        if not clean_dot or "digraph" not in clean_dot:
+            logger.warning("[FlowAgent] No valid Graphviz DOT code detected. Using fallback structure.")
+            clean_dot = (
+                "digraph G {\n"
+                "  label=\"System Flow\";\n"
+                "  node [shape=box, style=filled, color=lightblue];\n"
+                "  Start -> Process -> Output;\n"
+                "}"
+            )
 
-        # -------------------------------
-        # 4️⃣ Save DOT File
-        # -------------------------------
+        # Save .dot file
         ensure_dirs()
         dot_path = Path(settings["paths"]["diagrams_dir"]) / "system_flow.dot"
-        save_text(dot_path, dot_code)
-        logger.info(f"[FlowAgent] DOT file saved: {dot_path}")
+        save_text(dot_path, clean_dot)
+        logger.info(f"[FlowAgent] DOT file saved at {dot_path}")
 
-        # -------------------------------
-        # 5️⃣ Attempt PNG Rendering
-        # -------------------------------
+        # Try rendering to PNG
         png_path = Path(settings["paths"]["diagrams_dir"]) / "system_flow.png"
         try:
             subprocess.run(
@@ -69,7 +81,7 @@ def run_flow_agent(requirements: dict) -> str:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            logger.success(f"[FlowAgent] Diagram rendered successfully: {png_path}")
+            logger.info(f"[FlowAgent] Diagram rendered successfully: {png_path}")
             return str(png_path)
 
         except FileNotFoundError:
