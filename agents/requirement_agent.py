@@ -15,20 +15,26 @@ def run_requirement_agent(problem_description: str) -> dict:
     Returns both human-readable markdown and parsed JSON.
     """
     try:
+        if not problem_description or not problem_description.strip():
+            raise ValueError("Empty input: problem_description is required.")
+
         system = (
             "You are a senior business analyst generating structured requirements "
             "based on the provided problem statement."
         )
 
-        # Load and format the prompt template
-        prompt = load_prompt("requirements.md").format(
-            system=system,
-            problem_description=problem_description,
-        )
+        # ✅ Load prompt dynamically and safely format placeholders
+        template = load_prompt("requirements.md")
+        prompt = template.format_map({
+            "system": system,
+            "problem_description": problem_description.strip()
+        })
+
+        logger.info("[RequirementAgent] Generating requirements...")
+        logger.debug(f"[RequirementAgent] Using dynamic input:\n{problem_description[:500]}")
 
         # Initialize the model
         llm = get_llm("requirement")
-        logger.info("[RequirementAgent] Generating requirements...")
 
         # Get clean text output from LLM
         text = llm.invoke(prompt, agent_name="requirement")
