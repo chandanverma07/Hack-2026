@@ -1,4 +1,6 @@
 import json
+import pandas as pd
+import re
 from core.llm import get_llm
 from core.prompts_loader import load_prompt
 from core.logger import init_logger
@@ -12,14 +14,15 @@ settings = load_settings()
 def run_jira_story_agent(requirements: dict) -> list:
     """
     Generate JIRA-ready user stories in BDD (Behavior-Driven Development) format
-    from structured software requirements.
+    from structured software requirements or SRS documents.
 
     Returns:
-        list[dict]: List of JIRA story objects, each containing summary, description, and BDD content.
+        list[dict]: List of JIRA story objects, each containing summary, description,
+                    BDD content, role, and labels.
     """
     try:
         # -------------------------------
-        # 1️⃣ Load Prompts
+        # 1. Load Prompts
         # -------------------------------
         system_prompt = load_prompt("system_base.md")
         user_prompt = load_prompt("jira.md").format(
@@ -28,13 +31,13 @@ def run_jira_story_agent(requirements: dict) -> list:
         )
 
         # -------------------------------
-        # 2️⃣ Initialize LLM
+        # 2. Initialize LLM
         # -------------------------------
         llm = get_llm()
-        logger.info("[JiraStoryAgent] Generating user stories (BDD format)...")
+        logger.info("[JiraStoryAgent] Generating user stories in BDD format...")
 
         # -------------------------------
-        # 3️⃣ Invoke LLM with Token Tracking
+        # 3. Invoke LLM with Token Tracking
         # -------------------------------
         if hasattr(llm, "run_with_usage"):
             resp = llm.run_with_usage(user_prompt, "JiraStoryAgent")
@@ -44,14 +47,18 @@ def run_jira_story_agent(requirements: dict) -> list:
         text = resp.content if hasattr(resp, "content") else str(resp)
 
         # -------------------------------
-        # 4️⃣ Parse LLM Response (JSON)
+        # 4. Clean JSON Markers (remove ```json ... ```)
+        # -------------------------------
+        cleaned_text = re.sub(r"```json|```", "", text).strip()
+
+        # -------------------------------
+        # 5. Parse LLM Response (JSON)
         # -------------------------------
         try:
-            stories = json.loads(text)
+            stories = json.loads(cleaned_text)
             if not isinstance(stories, list):
                 logger.warning("[JiraStoryAgent] Response was not a list. Wrapping as single story.")
                 stories = [stories]
-
         except json.JSONDecodeError:
             logger.warning("[JiraStoryAgent] Invalid JSON response. Wrapping as single fallback story.")
             stories = [
@@ -59,12 +66,13 @@ def run_jira_story_agent(requirements: dict) -> list:
                     "summary": "Draft SDLC Story",
                     "description": text,
                     "bdd": text,
-                    "labels": ["auto", "sdlc"],
+                    "role": "Developer",
+                    "labels": ["auto", "sdlc"]
                 }
             ]
 
         # -------------------------------
-        # 5️⃣ Ensure Minimum Story Fields
+        # 6. Ensure Minimum Story Fields
         # -------------------------------
         cleaned_stories = []
         for s in stories:
@@ -72,22 +80,35 @@ def run_jira_story_agent(requirements: dict) -> list:
                 "summary": s.get("summary", "Untitled Story"),
                 "description": s.get("description", s.get("bdd", "No description provided.")),
                 "bdd": s.get("bdd", ""),
-                "labels": s.get("labels", ["auto", "sdlc"]),
+                "role": s.get("role", "Developer"),
+                "labels": s.get("labels", ["auto", "sdlc"])
             }
             cleaned_stories.append(story)
 
         # -------------------------------
-        # 6️⃣ Save Intermediate Output
+        # 7. Save Intermediate Outputs (JSON + CSV)
         # -------------------------------
         if settings["features"].get("save_intermediate_json", True):
             ensure_dirs()
-            save_text("outputs/jira_stories.json", json.dumps(cleaned_stories, indent=2))
-            logger.info("[JiraStoryAgent] Saved intermediate stories -> outputs/jira_stories.json")
+
+            # Save JSON
+            json_path = "outputs/jira_stories.json"
+            save_text(json_path, json.dumps(cleaned_stories, indent=2))
+            logger.info(f"[JiraStoryAgent] Saved JSON -> {json_path}")
+
+            # ✅ Save CSV
+            try:
+                df = pd.DataFrame(cleaned_stories)
+                csv_path = "outputs/jira_stories.csv"
+                df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+                logger.info(f"[JiraStoryAgent] Saved CSV -> {csv_path}")
+            except Exception as e:
+                logger.warning(f"[JiraStoryAgent] Failed to save CSV: {e}")
 
         # -------------------------------
-        # 7️⃣ Return Final Stories
+        # 8. Return Final Stories
         # -------------------------------
-        logger.success(f"[JiraStoryAgent] Generated {len(cleaned_stories)} stories successfully.")
+        logger.info(f"[JiraStoryAgent] Generated {len(cleaned_stories)} stories successfully.")
         return cleaned_stories
 
     except Exception as e:
